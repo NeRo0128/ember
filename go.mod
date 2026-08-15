@@ -1,4 +1,4 @@
-module logcore
+module github.com/NeRo0128/logcore
 
 go 1.24.0
 

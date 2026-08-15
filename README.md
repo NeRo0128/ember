@@ -25,7 +25,7 @@ import (
     "bytes"
     "fmt"
 
-    "logcore/logger"
+    "github.com/NeRo0128/logcore/logger"
 )
 
 func main() {

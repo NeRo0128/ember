@@ -3,8 +3,8 @@ package logger
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -109,14 +109,17 @@ func TestLogger_Concurrency(t *testing.T) {
 	logger.AddOutput(&buf)
 
 	// Run multiple goroutines that log concurrently
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
+		wg.Add(1)
 		go func(i int) {
+			defer wg.Done()
 			logger.Info("Concurrent log", Field{"index", i})
 		}(i)
 	}
 
-	// Allow goroutines to finish
-	time.Sleep(100 * time.Millisecond)
+	// Esperar a que todas las goroutines terminen antes de leer el buffer
+	wg.Wait()
 
 	output := buf.String()
 
