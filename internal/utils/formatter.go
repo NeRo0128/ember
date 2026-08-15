@@ -12,17 +12,22 @@ import (
 	"golang.org/x/term"
 )
 
-func FormatJSON(entry map[string]interface{}, pretty bool) ([]byte, error) { // todo: agregar colores q diferencien a los campos de su contenido
+// FormatJSON serializes a log entry as JSON, indented with two spaces when
+// pretty is true.
+func FormatJSON(entry map[string]interface{}, pretty bool) ([]byte, error) { // todo: add colors distinguishing fields from their values
 	if pretty {
 		return json.MarshalIndent(entry, "", "  ")
 	}
 	return json.Marshal(entry)
 }
 
+// FormatText renders a log entry as a single line of text: timestamp, level
+// (colored when stdout is a terminal), layer, message, caller, and any extra
+// fields.
 func FormatText(entry map[string]interface{}, level string, pretty bool) string {
 	var sb strings.Builder
 
-	//timestamp
+	// timestamp
 	ts, _ := entry["ts"].(string)
 	if ts == "" {
 		ts = time.Now().Format(time.RFC3339)
@@ -48,7 +53,7 @@ func FormatText(entry map[string]interface{}, level string, pretty bool) string 
 		sb.WriteString(fmt.Sprintf(" %s", msg))
 	}
 
-	// Caller
+	// caller
 	if caller, ok := entry["caller"].(string); ok && caller != "" {
 		sb.WriteString(fmt.Sprintf(" (%s)", filepath.Base(caller)))
 	}
@@ -68,7 +73,9 @@ func isTerminal() bool {
 	return term.IsTerminal(fd)
 }
 
-// Aplica color al nivel de log (solo si es TTY)
+// applyColor wraps text in an ANSI color escape sequence for the given log
+// level, or returns it unchanged if the level has no color (only used when
+// stdout is a TTY).
 func applyColor(level, text string) string {
 	switch level {
 	case "DEBUG":
@@ -86,10 +93,9 @@ func applyColor(level, text string) string {
 	}
 }
 
-//todo: Mejorar la serialización de campos complejos:
-
+// FormatField serializes a field value for display, JSON-encoding complex
+// values (structs, maps) and indenting them when pretty is true.
 func FormatField(field any, pretty bool) string {
-	// Si es una estructura o un mapa, lo convertimos a JSON
 	j, err := json.Marshal(field)
 	if err != nil {
 		return fmt.Sprintf("%v", field)
@@ -102,13 +108,12 @@ func FormatField(field any, pretty bool) string {
 	return string(j)
 }
 
-// Formatea un log completo (timestamp, nivel, mensaje, y otros campos)
+// FormatLog renders a complete log entry as JSON or text depending on its
+// "lvl" value: "JSON" uses FormatJSON, anything else uses FormatText.
 func FormatLog(entry map[string]any, level string, pretty bool) string {
 	if entry["lvl"] == "JSON" {
-		// Si el formato es JSON, utilizamos el formato JSON
 		j, _ := FormatJSON(entry, pretty)
 		return string(j)
 	}
-	// Si no es JSON, usamos el formato de texto
 	return FormatText(entry, level, pretty)
 }
