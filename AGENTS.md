@@ -21,14 +21,16 @@ Tests use `github.com/stretchr/testify/assert` and `bytes.Buffer` via `AddOutput
 
 ## Gotchas (verified from source)
 
-- `logger.Fatal` only logs at `FatalLevel` — it does **not** `os.Exit`. Callers that expect termination must do it themselves.
+- `logger.Fatal` logs at `FatalLevel` **and** calls `os.Exit(1)` (via the swappable `osExit` var — tests override it).
 - `NewLogger` defaults: `InfoLevel`, text output, single `os.Stdout` writer, caller off, no layer. `WithJSON(true)` + `WithPrettyJSON(true)` for pretty JSON.
-- Levels are ordered `Debug(0) < Info < Warn < Error < Fatal(4)`; messages below the configured level are dropped (`l.level > level`).
-- Concurrency: `loggerImpl` is mutex-protected; `WithFields`/`WithLayer`/`WithContext` return clones, but `WithField` (option), `SetLevel`, and `AddOutput` mutate the shared instance. Use the `With*` methods to derive loggers without affecting the original.
+- Levels are ordered `Debug(0) < Info < Warn < Error < Fatal(4)`; messages below the configured level are dropped (`l.level.Load() > level`). `level` is `atomic.Int32` — clones copy it via `clone.level.Store(l.level.Load())`.
+- Concurrency: `loggerImpl` is mutex-protected; `WithFields`/`WithLayer`/`WithContext` return clones, but `WithField` (option), `SetLevel`, `AddOutput`, `Sync`, and `Close` mutate the shared instance. Use the `With*` methods to derive loggers without affecting the original.
 - Colors in text output depend on **`os.Stdout` being a TTY** (`term.IsTerminal(os.Stdout.Fd())` in `utils`), not on the writer being written to — buffer-based tests always get plain text.
 - `FormatStructAsJSON` writes raw indented JSON straight to writers, bypassing level filtering and the standard `ts`/`lvl`/`msg` entry shape.
+- `Sync` deliberately skips `os.Stdout` — `os.Stdout.Sync()` returns EINVAL on pipes, so syncing it would fail spuriously in CI/headless runs.
+- `logger/entry.go` and `logger/hook.go` (`Hook` interface + `Entry`) are a work-in-progress, not yet wired into the logging path.
 
 ## Conventions
 
-- Code comments, README, and commit messages are in Spanish — keep new comments consistent.
-- `runtime.Caller(2)` comment ("skip 3 frames") is stale relative to the code; caller frame counts are fragile, verify before editing.
+- Doc comments are written in **English** and must start with the exported name. Commit messages stay in Spanish.
+- `runtime.Caller(2)` comment ("skip 2 frames") matches the code; caller frame counts are fragile, verify before editing.
