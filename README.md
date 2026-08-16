@@ -1,22 +1,66 @@
-# logcore
+<div align="center">
 
-Logcore es una pequeña librería de logging en Go que ofrece:
-- Salida en texto o JSON.
-- Niveles de log: DEBUG, INFO, WARN, ERROR, FATAL.
-- Soporte para campos adicionales (Field), capas (layer) y caller.
-- Salida hacia múltiples writers (stdout, buffers, archivos, etc).
-- Formateo con colores cuando se ejecuta en un terminal.
+# 🔥 ember
 
-## Estado
-Módulo en desarrollo. Pruebas unitarias disponibles en [`logger/logger_test.go`](logger/logger_test.go).
+**High-performance structured logging for Go**
 
-## Instalación
+[![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-blue)](https://golang.org)
+[![Go Report Card](https://goreportcard.com/badge/github.com/NeRo0128/ember)](https://goreportcard.com/report/github.com/NeRo0128/ember)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Clona el repositorio y usa `go build` / `go test` según necesites.
+</div>
 
-## Uso rápido
+`ember` is a lightweight, zero-allocation-oriented structured logger for Go, designed for production services that demand **speed**, **safety**, and **observability**.
 
-Importa el paquete y crea un logger:
+It provides leveled logging with structured fields, JSON/text output, concurrent-safe writes, and production-grade features — sampling, hooks, async mode, file rotation, and context extractors — without the bloat of larger frameworks.
+
+---
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Production Patterns](#-production-patterns)
+  - [Async Logging](#async-logging)
+  - [Sampling](#sampling)
+  - [Hooks](#hooks)
+  - [File Rotation](#file-rotation)
+  - [Distributed Tracing](#distributed-tracing)
+- [API Reference](#-api-reference)
+- [Benchmarks](#-benchmarks)
+- [Testing](#-testing)
+- [License](#-license)
+
+---
+
+## ✨ Features
+
+| Feature                    | Description                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| **Structured Logging**     | JSON or colored plain-text output with typed `Field` key-value pairs                      |
+| **Leveled Output**         | `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` with atomic, lock-free level filtering          |
+| **Concurrent-Safe**        | `sync/atomic` for level checks; mutex-protected writes prevent interleaved output         |
+| **Sampling**               | `EveryNSampler` reduces log volume for high-throughput services; errors are never sampled |
+| **Hooks**                  | Intercept entries for Slack alerts, Prometheus metrics, SIEM forwarding, or audit trails  |
+| **Async Mode**             | Buffered channel + worker goroutine keeps your hot path non-blocking                      |
+| **File Rotation**          | Automatic rotation by size, backup count, and age with zero external dependencies         |
+| **Context Extractors**     | Auto-inject `trace_id`, `span_id`, `user_id` from `context.Context` into every entry      |
+| **Zero Core Dependencies** | Only `stretchr/testify` for tests; no runtime bloat                                       |
+
+---
+
+## 📦 Installation
+
+```bash
+go get github.com/NeRo0128/ember
+```
+
+Requires **Go 1.21+**.
+
+---
+
+## 🚀 Quick Start
 
 ```go
 package main
@@ -25,60 +69,92 @@ import (
     "bytes"
     "fmt"
 
-    "github.com/NeRo0128/logcore/logger"
+    "github.com/NeRo0128/ember/logger"
 )
 
 func main() {
-    // Crear logger con JSON habilitado y nivel INFO
-    l := logger.NewLogger(
+    log := logger.NewLogger(
         logger.WithLevel(logger.InfoLevel),
         logger.WithJSON(true),
     )
 
-    // Añadir una salida extra (por ejemplo un buffer)
     var buf bytes.Buffer
-    l.AddOutput(&buf)
+    log.AddOutput(&buf)
 
-    // Logear un mensaje con campos
-    l.Info("Aplicación iniciada", logger.Field{Key: "version", Value: "v0.1.0"})
+    log.Info("server started",
+        logger.Field{Key: "port", Value: 8080},
+        logger.Field{Key: "env", Value: "production"},
+    )
 
     fmt.Println(buf.String())
+    // Output:
+    // {"ts":"2026-08-15T20:00:00Z","lvl":"INFO","msg":"server started","port":8080,"env":"production"}
 }
 ```
 
-Funciones útiles:
-- Creación: [`logger.NewLogger`](logger/logger.go), [`logger.NewDebugLogger`](logger/logger.go).
-- Opciones: [`logger.WithJSON`](logger/options.go), [`logger.WithPrettyJSON`](logger/options.go), [`logger.WithLevel`](logger/options.go), [`logger.WithLayer`](logger/options.go), [`logger.WithField`](logger/options.go), [`logger.WithCaller`](logger/options.go).
-- Tipo de campo: [`logger.Field`](logger/logger.go).
+### Global Wrapper
 
-También existe un envoltorio simple de uso global en [logs.go](logs.go) (funciones `LogSuccess`, `LogInfo`, `LogWarning`, `LogError`).
+For scripts or small utilities, use the package-level convenience functions:
 
-## Formato y utilidades
-El formateo de JSON y texto se realiza en el paquete interno de utilidades:
-- [`utils.FormatJSON`](internal/utils/formatter.go)
-- [`utils.FormatText`](internal/utils/formatter.go)
+```go
+import "github.com/NeRo0128/ember"
 
-El formateador aplica colores si la salida es un TTY y serializa campos adicionales en el log.
-
-## Ejemplos
-- Logging en texto (por defecto):
-  - usa `logger.NewLogger()` sin `WithJSON(true)`.
-- Logging en JSON:
-  - usa `logger.NewLogger(logger.WithJSON(true))`.
-- Añadir caller: `logger.WithCaller(true)`.
-- Añadir capa (layer): `logger.WithLayer("Repository")`.
-
-## Tests
-Ejecuta las pruebas con:
-```sh
-go test ./...
+ember.LogInfo("application ready")
+ember.LogError("connection timeout")
 ```
-Las pruebas del logger están en [`logger/logger_test.go`](logger/logger_test.go).
 
-## Contribuir
-1. Crea una rama feature/fix.
-2. Envía PR con tests que cubran cambios.
-3. Respeta estilo y mutexes actuales para concurrencia en `logger`.
+---
 
-## Licencia
-Sin licencia especificada (añade un archivo LICENSE si quieres compartirlo públicamente).
+## 🏭 Production Patterns
+
+### Async Logging
+
+Prevent disk I/O from blocking your HTTP handlers:
+
+```go
+log := logger.NewLogger(
+    logger.WithLevel(logger.InfoLevel),
+    logger.WithAsync(1000), // buffered channel capacity
+)
+
+// Non-blocking — returns immediately
+log.Info("request handled", logger.Field{Key: "duration_ms", Value: 45})
+
+defer log.Close() // drain queue and flush on shutdown
+```
+
+> **Note:** `Fatal` logs are always written synchronously to guarantee program termination.
+
+### Sampling
+
+Reduce noise in high-traffic services while preserving every error:
+
+```go
+sampler := logger.NewEveryNSampler(100, logger.InfoLevel)
+// 1 of every 100 DEBUG/INFO messages. WARN+ always passes.
+
+log := logger.NewLogger(
+    logger.WithLevel(logger.DebugLevel),
+    logger.WithSampling(sampler),
+)
+```
+
+### Hooks
+
+Send errors to Slack, increment Prometheus counters, or forward to a SIEM:
+
+```go
+type slackHook struct{}
+
+func (h *slackHook) Levels() []logger.Level {
+    return []logger.Level{logger.ErrorLevel, logger.FatalLevel}
+}
+
+func (h *slackHook) Fire(e logger.Entry) error {
+    // e.Message, e.Level, e.Fields, e.Time, e.Caller, e.Layer
+    // send to Slack webhook...
+    return nil
+}
+
+log
+```
